@@ -2,7 +2,7 @@
   "name": "better-slop-hits",
   "private": true,
   "scripts": {
-    "check": "node --check better-slop-hits.user.js && node --check tests/player-smoke.cjs && node --check scripts/smoke-session.cjs",
+    "check": "node --check better-slop-hits.user.js && node --check tests/player-smoke.cjs && node --check tests/likes-smoke.cjs && node --check scripts/smoke-session.cjs",
     "test:smoke": "node scripts/smoke-session.cjs",
     "test:smoke:once": "node scripts/smoke-session.cjs --once"
   },

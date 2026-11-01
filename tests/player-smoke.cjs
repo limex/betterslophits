@@ -35,6 +35,26 @@ async function test(name, fn) {
   const wait = async predicate => page.waitForFunction(predicate);
   const open = async () => {await page.locator('button.pk').first().click();await wait(()=>document.querySelector('.dock')?.classList.contains('up'));};
   const closed = () => wait(()=>!document.querySelector('.dock')?.classList.contains('up')&&!document.documentElement.classList.contains('bsh-player-open'));
+  const legendLayout = async () => {
+    const rects = await page.locator('.dk-in').evaluate(e => {
+      const r = s => e.querySelector(s).getBoundingClientRect().toJSON();
+      return { keys: r('.dk-keys'), legend: r('.bsh-player-shortcuts'), seek: r('.dk-seek') };
+    });
+    assert(rects.legend.y >= rects.keys.bottom);
+    assert(rects.legend.bottom <= rects.seek.y);
+  };
+  const sameClipSource = async () => {
+    const expected = await page.evaluate(async () => {
+      const href = document.querySelector('.songs li.on a[href^="/clip/"]').getAttribute('href');
+      const doc = new DOMParser().parseFromString(await (await fetch(href)).text(), 'text/html');
+      return doc.querySelector('video').src;
+    });
+    await page.waitForFunction(src => {
+      const v = document.querySelector('.dock video');
+      return v?.currentSrc === src && v.readyState >= 1 && v.videoWidth > 0;
+    }, expected);
+    return page.locator('.dock video').evaluate(v => ({ width: v.videoWidth, height: v.videoHeight }));
+  };
   try {
     // Native fullscreen requires activation; routine runs must not steal focus.
     if (foreground) await page.bringToFront();
@@ -51,6 +71,9 @@ async function test(name, fn) {
       assert(g.info.y>=g.video.bottom&&g.keys.y>=g.video.bottom);
       await page.screenshot({path:`${artifactDir}/desktop.png`});
     });
+    await test('Lightbox uses the exact clip-page source at 1280x720 for Evil Plan', async()=>{
+      assert.deepEqual(await sameClipSource(), { width: 1280, height: 720 });
+    });
     await test('Pause and resume',async()=>{
       await wait(()=>!!document.querySelector('.dock video')?.readyState);
       if(await page.locator('.dock video').evaluate(v=>v.paused))await page.locator('.dk-keys .play').click();
@@ -60,13 +83,58 @@ async function test(name, fn) {
     await test('Next and previous tracks',async()=>{
       const title=await page.locator('.dk-ti').textContent();
       await page.locator('.dk-keys .next').click();await page.waitForFunction(t=>document.querySelector('.dk-ti').textContent!==t,title);
+      await sameClipSource();
       await page.locator('.dk-keys .prev').click();await page.waitForFunction(t=>document.querySelector('.dk-ti').textContent===t,title);
+      await sameClipSource();
     });
     await test('Sound toggle and seeking',async()=>{
       const sound=page.locator('.dk-scr .snd');const before=await sound.getAttribute('aria-pressed');await sound.click();assert.notEqual(await sound.getAttribute('aria-pressed'),before);await sound.click();
       await wait(()=>document.querySelector('.dock video')?.duration>10);
       await page.locator('.dk-seek .sk-bar').click({position:{x:100,y:5}});
       await wait(()=>document.querySelector('.dock video').currentTime>1);
+    });
+    await test('Shortcut legend sits between controls and progress', legendLayout);
+    await test('Lightbox Space, place arrows and M control the current player', async()=>{
+      await page.locator('.dk-x').focus();
+      const paused = await page.locator('.dock video').evaluate(v=>v.paused);
+      await page.keyboard.press('Space');
+      await page.waitForFunction(old=>document.querySelector('.dock video').paused!==old, paused);
+      await page.keyboard.press('Space');
+      await page.waitForFunction(old=>document.querySelector('.dock video').paused===old, paused);
+      const title = await page.locator('.dk-ti').textContent();
+      await page.keyboard.press('>');
+      await page.waitForFunction(old=>document.querySelector('.dk-ti').textContent!==old, title);
+      await page.keyboard.press('<');
+      await page.waitForFunction(old=>document.querySelector('.dk-ti').textContent===old, title);
+      await sameClipSource();
+      const sound = await page.locator('.dk-scr .snd').getAttribute('aria-pressed');
+      await page.keyboard.press('m');
+      assert.notEqual(await page.locator('.dk-scr .snd').getAttribute('aria-pressed'), sound);
+      await page.keyboard.press('m');
+      assert.equal(await page.locator('.dk-scr .snd').getAttribute('aria-pressed'), sound);
+    });
+    await test('F routes to fullscreen control; modifiers, typing and repeats are ignored', async()=>{
+      await page.evaluate(()=>{
+        window.bshKeyClicks=[];
+        window.bshKeyGuard=e=>{
+          const button=e.target.closest('.fsk, .play, .bsh-like');
+          if(button){window.bshKeyClicks.push(button.className);e.preventDefault();e.stopImmediatePropagation();}
+        };
+        document.addEventListener('click',window.bshKeyGuard,true);
+      });
+      try {
+        await page.keyboard.press('f');
+        await page.keyboard.press('Control+f');
+        await page.evaluate(()=>{
+          document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'f',repeat:true,bubbles:true}));
+          const input=document.createElement('input');document.querySelector('.dk-in').append(input);input.focus();
+          for(const key of ['f','l',' '])input.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true}));
+          input.remove();
+        });
+        assert.deepEqual(await page.evaluate(()=>window.bshKeyClicks),['fsk']);
+      } finally {
+        await page.evaluate(()=>document.removeEventListener('click',window.bshKeyGuard,true));
+      }
     });
     await test('Tab and Shift+Tab remain in dialog',async()=>{
       await page.locator('.dk-x').focus();await page.keyboard.press('Tab');assert(await page.locator('.dk-scr .fsk').evaluate(e=>e===document.activeElement));
@@ -91,6 +159,7 @@ async function test(name, fn) {
       await viewport(width,height);await open();
       const g=await page.locator('.dk-in').evaluate(e=>({rect:e.getBoundingClientRect().toJSON(),overflow:e.scrollWidth>e.clientWidth}));
       assert(!g.overflow);assert(g.rect.left>=0&&g.rect.right<=width&&g.rect.top>=0&&g.rect.bottom<=height);
+      await legendLayout();
       await page.screenshot({path:`${artifactDir}/${width}x${height}.png`});
       await page.locator('.dk-x').click();await closed();
     });
@@ -99,9 +168,9 @@ async function test(name, fn) {
       await page.getByRole('button',{name:'List',exact:true}).click();await open();await page.locator('.dk-x').click();await closed();
     });
     await test('SPA chart navigation and return; no duplicate styles',async()=>{
-      await page.locator('a[href="/#chart"]').first().click();await page.waitForURL('**/#chart');
+      await page.locator('a[href="/#chart"]').first().click();await page.waitForURL('**/#chart', { waitUntil: 'domcontentloaded', timeout: 30000 });
       assert(!await page.locator('html').evaluate(e=>e.classList.contains('bsh-player-open')));
-      await page.locator('a[href="/songs"]').first().click();await page.waitForURL('**/songs');await open();
+      await page.locator('a[href="/songs"]').first().click();await page.waitForURL('**/songs', { waitUntil: 'domcontentloaded', timeout: 30000 });await open();
       assert.equal(await page.locator('#bsh-player-style').count(),1);await page.locator('.dk-x').click();await closed();
     });
     await test('No uncaught page errors',async()=>assert.deepEqual(errors,[]));

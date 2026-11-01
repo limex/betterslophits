@@ -16,9 +16,19 @@ const readline = require('node:readline/promises');
       // Reload the test module so changes are picked up without reconnecting.
       const testPath = require.resolve('../tests/player-smoke.cjs');
       delete require.cache[testPath];
-      const passed = await require(testPath)(browser, { foreground: process.argv.includes('--foreground') });
+      let passed = false;
+      try {
+        const playerPassed = await require(testPath)(browser, { foreground: process.argv.includes('--foreground') });
+        const likesPath = require.resolve('../tests/likes-smoke.cjs');
+        delete require.cache[likesPath];
+        const likesPassed = await require(likesPath)(browser);
+        passed = playerPassed && likesPassed;
+      } catch (error) {
+        // A failed setup should not force another Chrome approval on retry.
+        console.error(error);
+      }
       process.exitCode = passed ? 0 : 1;
-      console.log(passed ? 'All enabled smoke checks passed. See results.json for any skips.' : 'Smoke checks failed. See .artifacts/smoke/results.json.');
+      console.log(passed ? 'All enabled smoke checks passed. See results.json for any skips.' : 'Smoke checks failed. See .artifacts/smoke/ and .artifacts/likes/.');
       if (process.argv.includes('--once')) break;
       const command = await prompt.question('Connection stays open. Enter to rerun, or q to disconnect: ');
       if (command.trim().toLowerCase() === 'q') break;
