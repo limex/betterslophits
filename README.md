@@ -3,7 +3,7 @@
 - **Larger songs player:** a responsive lightbox with a dimmed backdrop and controls below the video.
 - **Clip-page video quality:** plays the same video source as each song’s dedicated clip page.
 - **Like on X:** like tracks from the chart or lightbox, with confirmation and protection against unliking an already-liked track.
-- **Keyboard controls:** Space to play/pause, < / > to change songs, M for sound, F for fullscreen, and L to like—with a visible shortcut legend in the lightbox.
+- **Keyboard controls:** Space to play/pause, < / > to change songs, M for sound, F for fullscreen, and L to like.
 
 ![image](./images/pasted_20261101-150915.png)
 
@@ -54,3 +54,7 @@ Release `.04` verification: 14 player checks and 16 Like checks passed in regula
 Release `2026-11-01.05`: the open songs lightbox supports Space (play/pause), < / > or left/right arrows (previous/next place), M (sound), F (fullscreen), and L (Like on X). The shortcut legend appears between the player buttons and progress bar and wraps on narrow screens. Shortcuts ignore typing fields, modifiers, composition and held-key repeats; a focused progress slider retains native arrow-key seeking.
 
 Release `2026-11-01.06` verification: all 33 enabled smoke checks passed (17 player, 16 Like) against the installed script in background regular Chrome. Native fullscreen was skipped to avoid stealing focus; F dispatch to its control was verified. Syntax and whitespace checks passed. The suites assert no uncaught JavaScript errors (`pageerror`); they do not assert a clean console or collect `console.error()` messages, warnings, or failed network requests.
+
+Release `2026-11-01.07`: hide the songs lightbox keyboard legend at mobile widths (600px and below), including its grid row. Desktop keeps the legend. Verified with Playwright in a background regular Chrome tab using the local stylesheet on the live songs page: hidden at 390/600px, visible at 601/844/1440px. Syntax and whitespace checks passed. This targeted check did not update the installed Tampermonkey script or exercise native fullscreen.
+
+Release `2026-11-01.08`: remove the songs lightbox keyboard legend entirely on desktop and mobile, including its creation code, styles, and grid row. Keyboard controls remain available. Installed in regular Chrome and confirmed the saved source matches the local file. All 17 enabled player smoke checks passed against the installed script, including absent legends at desktop, mobile portrait, and landscape widths; native fullscreen was skipped in background mode. Syntax and whitespace checks passed. The iPhone installation is not accessible from this workspace.

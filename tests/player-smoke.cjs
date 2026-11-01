@@ -35,14 +35,7 @@ async function test(name, fn) {
   const wait = async predicate => page.waitForFunction(predicate);
   const open = async () => {await page.locator('button.pk').first().click();await wait(()=>document.querySelector('.dock')?.classList.contains('up'));};
   const closed = () => wait(()=>!document.querySelector('.dock')?.classList.contains('up')&&!document.documentElement.classList.contains('bsh-player-open'));
-  const legendLayout = async () => {
-    const rects = await page.locator('.dk-in').evaluate(e => {
-      const r = s => e.querySelector(s).getBoundingClientRect().toJSON();
-      return { keys: r('.dk-keys'), legend: r('.bsh-player-shortcuts'), seek: r('.dk-seek') };
-    });
-    assert(rects.legend.y >= rects.keys.bottom);
-    assert(rects.legend.bottom <= rects.seek.y);
-  };
+  const noLegend = async () => assert.equal(await page.locator('.bsh-player-shortcuts').count(), 0);
   const sameClipSource = async () => {
     const expected = await page.evaluate(async () => {
       const href = document.querySelector('.songs li.on a[href^="/clip/"]').getAttribute('href');
@@ -93,7 +86,7 @@ async function test(name, fn) {
       await page.locator('.dk-seek .sk-bar').click({position:{x:100,y:5}});
       await wait(()=>document.querySelector('.dock video').currentTime>1);
     });
-    await test('Shortcut legend sits between controls and progress', legendLayout);
+    await test('Songs lightbox has no shortcut legend', noLegend);
     await test('Lightbox Space, place arrows and M control the current player', async()=>{
       await page.locator('.dk-x').focus();
       const paused = await page.locator('.dock video').evaluate(v=>v.paused);
@@ -159,7 +152,7 @@ async function test(name, fn) {
       await viewport(width,height);await open();
       const g=await page.locator('.dk-in').evaluate(e=>({rect:e.getBoundingClientRect().toJSON(),overflow:e.scrollWidth>e.clientWidth}));
       assert(!g.overflow);assert(g.rect.left>=0&&g.rect.right<=width&&g.rect.top>=0&&g.rect.bottom<=height);
-      await legendLayout();
+      await noLegend();
       await page.screenshot({path:`${artifactDir}/${width}x${height}.png`});
       await page.locator('.dk-x').click();await closed();
     });

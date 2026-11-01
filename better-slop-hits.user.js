@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better SlopHits
 // @namespace    BetterSlopHits
-// @version      2026-11-01.06
+// @version      2026-11-01.08
 // @description  A larger SlopHits player and confirmed likes on X.
 // @match        https://slophits.com/*
 // @match        https://x.com/*/status/*
@@ -107,13 +107,6 @@
     .bsh-like { background: var(--yellow, #ffe600); color: var(--black, #111); }
     .bsh-like:disabled { opacity: .55; cursor: wait; }
     .rc:has(> .bsh-like) { grid-template-columns: minmax(0, 1.5fr) repeat(6, minmax(0, 1fr)); }
-    .bsh-player-shortcuts {
-      grid-area: shortcuts; display: flex; flex-wrap: wrap; justify-content: center;
-      gap: 6px 16px; font-size: 12px; color: var(--yellow, #ffe600);
-    }
-    .bsh-player-shortcuts span { white-space: nowrap; }
-    .bsh-player-shortcuts kbd { font: inherit; font-weight: bold; margin-right: 5px; }
-    .dock.fs .bsh-player-shortcuts { display: none; }
     .bsh-toast {
       position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%);
       z-index: 2000; max-width: calc(100vw - 32px); box-sizing: border-box;
@@ -138,7 +131,7 @@
       border-top: 4px solid var(--yellow, #ffed00);
       box-shadow: 0 16px 64px #0009;
       grid-template-columns: minmax(0, 1fr) auto 40px;
-      grid-template-areas: 'scr scr scr' 'info keys x' 'shortcuts shortcuts shortcuts' 'seek seek seek';
+      grid-template-areas: 'scr scr scr' 'info keys x' 'seek seek seek';
       gap: 12px;
     }
     .dock.bsh-player:not(.fs) .dk-scr {
@@ -162,7 +155,7 @@
       .dock.bsh-player:not(.fs) { padding: 8px; }
       .dock.bsh-player:not(.fs) .dk-in {
         padding: 10px; gap: 10px; grid-template-columns: minmax(0, 1fr) 44px;
-        grid-template-areas: 'scr scr' 'info x' 'keys keys' 'shortcuts shortcuts' 'seek seek';
+        grid-template-areas: 'scr scr' 'info x' 'keys keys' 'seek seek';
       }
       .dock.bsh-player .dk-keys { justify-content: center; }
       .dock.bsh-player .dk-keys .rc-k { width: 66px; }
@@ -361,16 +354,6 @@
     syncLikes();
     const dock = /^\/songs\/?$/.test(location.pathname) ? document.querySelector('.dock') : null;
     matchClipQuality(dock);
-    const seek = dock?.querySelector('.dk-seek');
-    if (seek && !dock.querySelector('.bsh-player-shortcuts')) {
-      const legend = document.createElement('div');
-      legend.className = 'bsh-player-shortcuts';
-      legend.setAttribute('aria-label', 'Player keyboard shortcuts');
-      legend.innerHTML = '<span><kbd>Space</kbd>play</span><span><kbd>&lt;&gt;</kbd>place</span><span><kbd>M</kbd>sound</span><span><kbd>F</kbd>full screen</span><span><kbd>L</kbd>like on X</span>';
-      // Append after native children so Vue hydration keeps their positions.
-      // The grid area places this visually between controls and seek bar.
-      seek.parentElement.append(legend);
-    }
     if (dock && !dock.classList.contains('bsh-player')) dock.classList.add('bsh-player');
     const next = dock?.classList.contains('up') ? dock : null;
     if (next === activeDock) return;
