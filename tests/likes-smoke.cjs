@@ -220,6 +220,93 @@ module.exports = async function runLikesSmoke(browser) {
       assert.equal(state.clicks, 1);
     });
     await test('Songs Like fits beside Next on desktop and mobile', () => checkLayout('songs'));
+    await page.goto('https://slophits.com/#duel', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForSelector('#duel .picks .bsh-like');
+    await test('Skipping pairs preserves A/Like/B/Like order on desktop and mobile', async () => {
+      for (const width of [1440, 390]) {
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+        const oldPick = await page.locator('#duel .pick.a').elementHandle();
+        await page.getByRole('button', { name: 'Skip this pair', exact: true }).click();
+        await page.waitForFunction(pick => !pick.isConnected, oldPick);
+        await oldPick.dispose();
+        await page.waitForFunction(() => {
+          const buttons = [...document.querySelectorAll('#duel .picks > button')];
+          return buttons.length === 4 && buttons[0].matches('.pick.a') && buttons[1].dataset.kind === 'duel-a'
+            && buttons[2].matches('.pick.b') && buttons[3].dataset.kind === 'duel-b';
+        });
+        await page.locator('#duel .stinger').waitFor({ state: 'hidden' });
+        const boxes = await page.locator('#duel .picks > button').evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().toJSON()));
+        for (const index of [1, 2, 3]) {
+          assert(boxes[index].x >= boxes[index - 1].right);
+          assert(Math.abs(boxes[index].y - boxes[0].y) < 1);
+          assert(Math.abs(boxes[index].height - boxes[0].height) < 1);
+        }
+        assert(boxes[3].right <= width);
+        await page.locator('#duel .picks').screenshot({ path: path.join(artifactDir, `duel-after-skip-${width}.png`) });
+      }
+      await cdp.send('Emulation.clearDeviceMetricsOverride');
+    });
+    const duelSongs = [1, 2, 3].map(index => ({
+      id: '900000000000000000' + index,
+      thumb: `https://slophits.com/bsh-fixture-${index}.jpg`,
+    }));
+    const songsHandler = route => route.fulfill({ json: { songs: duelSongs } });
+    await context.route('https://slophits.com/api/songs', songsHandler);
+    try {
+      await page.locator('#duel .arena .scrw img.fg').evaluateAll((images, songs) => {
+        images.forEach((image, index) => image.setAttribute('src', songs[index].thumb));
+      }, duelSongs);
+      await test('Duel Likes sit beside A and B slaps at desktop and mobile widths', async () => {
+        for (const width of [1440, 390, 320]) {
+          await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+          for (const side of ['a', 'b']) {
+            const pick = page.locator(`#duel .pick.${side}`);
+            const like = page.locator(`#duel .pick.${side} + .bsh-like`);
+            assert.equal(await like.getAttribute('aria-label'), `Like clip ${side.toUpperCase()} on X`);
+            assert.equal(await like.getAttribute('aria-keyshortcuts'), null);
+            const a = await pick.boundingBox(), b = await like.boundingBox();
+            assert(Math.abs(a.y - b.y) < 1);
+            assert(Math.abs(a.height - b.height) < 1);
+            assert.equal(await like.evaluate(e => getComputedStyle(e).boxShadow), await pick.evaluate(e => getComputedStyle(e).boxShadow));
+            assert(b.x >= a.x + a.width && b.x + b.width <= width);
+          }
+          await page.locator('#duel .picks').screenshot({ path: path.join(artifactDir, `duel-${width}.png`) });
+        }
+        await cdp.send('Emulation.clearDeviceMetricsOverride');
+      });
+      for (const [index, side] of ['a', 'b'].entries()) {
+        await test(`Duel ${side.toUpperCase()} likes its own post without voting`, async () => {
+          const state = { mode: 'success', liked: false, loads: 0, clicks: 0 };
+          states.set(duelSongs[index].id, state);
+          const before = await page.locator('#duel .count').textContent();
+          await page.locator(`[data-kind="duel-${side}"]`).click();
+          assert.match(await receipt(false), /^Liked on X:/);
+          assert.equal(state.clicks, 1);
+          assert(state.loads >= 2);
+          assert.equal(await page.locator('#duel .count').textContent(), before);
+          assert.equal(await page.locator('#duel .picks.voted').count(), 0);
+        });
+      }
+      await test('Duel Like resolves the new track after a card changes', async () => {
+        const state = { mode: 'already', liked: true, loads: 0, clicks: 0 };
+        states.set(duelSongs[2].id, state);
+        await page.locator('#duel .arena .scrw img.fg').first().evaluate((image, song) => image.src = song.thumb, duelSongs[2]);
+        await page.locator('[data-kind="duel-a"]').click();
+        assert.match(await receipt(false), /^Already liked on X:/);
+        assert.equal(state.clicks, 0);
+        assert(state.loads >= 1);
+        assert.equal(await page.locator('#duel .picks .bsh-like').count(), 2);
+      });
+      await test('An unknown duel track fails without opening an X helper', async () => {
+        const count = helpers.size;
+        await page.locator('#duel .arena .scrw img.fg').first().evaluate(image => image.src = 'https://slophits.com/bsh-unknown.jpg');
+        await page.locator('[data-kind="duel-a"]').click();
+        assert.match(await receipt(true), /Could not identify/);
+        assert.equal(helpers.size, count);
+      });
+    } finally {
+      await context.unroute('https://slophits.com/api/songs', songsHandler);
+    }
     await test('Helper tabs close after their result', async () => {
       await page.waitForTimeout(1000);
       assert([...helpers].every(helper => helper.isClosed()));

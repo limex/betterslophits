@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Better SlopHits
 // @namespace    BetterSlopHits
-// @version      2026-11-01.08
+// @version      2026-11-02.03
 // @description  A larger SlopHits player and confirmed likes on X.
 // @match        https://slophits.com/*
 // @match        https://x.com/*/status/*
@@ -106,6 +106,9 @@
   style.textContent = `
     .bsh-like { background: var(--yellow, #ffe600); color: var(--black, #111); }
     .bsh-like:disabled { opacity: .55; cursor: wait; }
+    .picks:has(> .bsh-like) { grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr) 64px; gap: 12px; }
+    .picks > .bsh-like { min-width: 0; min-height: 48px; box-shadow: 5px 5px 0 #000; }
+    .picks > .bsh-like > span { display: block; }
     .rc:has(> .bsh-like) { grid-template-columns: minmax(0, 1.5fr) repeat(6, minmax(0, 1fr)); }
     .bsh-toast {
       position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%);
@@ -181,7 +184,12 @@
   function currentTrack(kind) {
     let link;
     let title;
-    if (kind === 'songs') {
+    if (kind.startsWith('duel-')) {
+      const card = document.querySelectorAll('#duel .arena .scrw')[kind === 'duel-a' ? 0 : 1];
+      const thumb = card?.querySelector('img.fg')?.getAttribute('src');
+      title = card?.querySelector('.tag b')?.textContent.trim();
+      return thumb ? { thumb, title: title || 'Track' } : null;
+    } else if (kind === 'songs') {
       if (!document.querySelector('.dock.up')) return null;
       const selected = document.querySelector('.songs li.on');
       link = selected?.querySelector('a[href^="/clip/"]');
@@ -196,6 +204,31 @@
   }
 
   const pendingLikes = new Set();
+  const resolvingLikes = new Set();
+  let duelSongs;
+  async function resolveDuelTrack(track) {
+    // Duel cards have no post permalink. Resolve the exact thumbnail against
+    // the public song catalogue; never mistake a video asset ID for a post ID.
+    const catalogue = () => fetch('/api/songs', { signal: AbortSignal.timeout(15000) }).then(response => {
+      if (!response.ok) throw new Error('Could not load the duel track. Please try again.');
+      return response.json();
+    }).then(data => data.songs);
+    try {
+      duelSongs ||= catalogue();
+      let matches = (await duelSongs).filter(song => song.thumb === track.thumb);
+      if (!matches.length) {
+        duelSongs = catalogue(); // A newly submitted song may not be cached yet.
+        matches = (await duelSongs).filter(song => song.thumb === track.thumb);
+      }
+      if (matches.length !== 1 || !/^\d+$/.test(matches[0].id)) {
+        throw new Error('Could not identify this duel track safely. Please try again later.');
+      }
+      return { id: matches[0].id, title: track.title };
+    } catch (error) {
+      duelSongs = null;
+      throw error;
+    }
+  }
   function requestLike(track) {
     return new Promise((resolve, reject) => {
       const key = requestPrefix + crypto.randomUUID();
@@ -231,9 +264,25 @@
   }
 
   async function likeTrack(kind) {
-    const track = currentTrack(kind);
-    if (!track || pendingLikes.has(track.id)) return;
+    let track = currentTrack(kind);
+    if (!track || resolvingLikes.has(kind)) return;
+    if (track.thumb) {
+      resolvingLikes.add(kind);
+      syncLikes();
+      toast(`Liking ${track.title} on X…`);
+      try {
+        track = await resolveDuelTrack(track);
+      } catch (error) {
+        toast(error.message, true);
+        return;
+      } finally {
+        resolvingLikes.delete(kind);
+        syncLikes();
+      }
+    }
+    if (pendingLikes.has(track.id)) return;
     pendingLikes.add(track.id);
+    resolvingLikes.add(kind);
     syncLikes();
     toast(`Liking ${track.title} on X…`);
     try {
@@ -243,6 +292,7 @@
       toast(error.message, true);
     } finally {
       pendingLikes.delete(track.id);
+      resolvingLikes.delete(kind);
       syncLikes();
     }
   }
@@ -251,22 +301,28 @@
     for (const [kind, anchor] of [
       ['chart', document.querySelector('.rc-k.prog')],
       ['songs', document.querySelector('.dk-keys .next')],
+      ['duel-a', document.querySelector('#duel .picks .pick.a')],
+      ['duel-b', document.querySelector('#duel .picks .pick.b')],
     ]) {
       if (!anchor) continue;
-      let button = anchor.parentElement.querySelector('.bsh-like');
+      let button = anchor.parentElement.querySelector(`.bsh-like[data-kind="${kind}"]`);
       if (!button) {
         button = document.createElement('button');
         button.type = 'button';
         button.className = 'rc-k bsh-like';
+        button.dataset.kind = kind;
         button.innerHTML = '<svg viewBox="0 0 11 9" shape-rendering="crispEdges" aria-hidden="true"><path d="M1 0h3v1h3V0h3v1h1v4h-1v1H9v1H8v1H7v1H4V8H3V7H2V6H1V5H0V1h1z"/></svg><span>Like</span>';
-        button.setAttribute('aria-label', 'Like this track on X');
-        button.title = 'Like on X (L)';
-        button.setAttribute('aria-keyshortcuts', 'L');
+        const side = kind.startsWith('duel-') ? kind.slice(-1).toUpperCase() : null;
+        button.setAttribute('aria-label', side ? `Like clip ${side} on X` : 'Like this track on X');
+        button.title = side ? `Like clip ${side} on X` : 'Like on X (L)';
+        if (!side) button.setAttribute('aria-keyshortcuts', 'L');
         button.addEventListener('click', () => likeTrack(kind));
-        anchor.after(button);
       }
+      // SlopHits replaces/reorders the keyed voting buttons for each new pair.
+      // Restore adjacency even when our existing Like buttons survive that render.
+      if (anchor.nextElementSibling !== button) anchor.after(button);
       const track = currentTrack(kind);
-      button.disabled = !track || pendingLikes.has(track.id);
+      button.disabled = !track || resolvingLikes.has(kind) || pendingLikes.has(track.id);
     }
     const shortcuts = document.querySelector('.rc-keys');
     if (shortcuts && !shortcuts.querySelector('.bsh-like-hint')) {

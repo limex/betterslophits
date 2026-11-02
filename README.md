@@ -1,8 +1,9 @@
 # Better SlopHits
 
+- **Like from duels:** Like buttons beside **A slaps** and **B slaps** let you like either clip on X without casting a vote. They match the voting buttons’ height and stay aligned when you skip to the next pair.
 - **Larger songs player:** a responsive lightbox with a dimmed backdrop and controls below the video.
 - **Clip-page video quality:** plays the same video source as each song’s dedicated clip page.
-- **Like on X:** like tracks from the chart or lightbox, with confirmation and protection against unliking an already-liked track.
+- **Like on X:** like tracks from the chart, lightbox, or either side of a duel, with confirmation and protection against unliking an already-liked track.
 - **Keyboard controls:** Space to play/pause, < / > to change songs, M for sound, F for fullscreen, and L to like.
 
 ![image](./images/pasted_20261101-150915.png)
@@ -19,11 +20,17 @@ Close with the existing × button, Escape, or a click outside the panel. Closing
 
 On the chart, click **Like** after Programme or press **L**. The shortcut is listed after F, and ignores text fields, modifier combinations, composition, and held-key repeats. In the songs lightbox, **Like** follows Next. Buttons and toasts use the site's colors and typography.
 
+On the duel page, each **Like** button sits beside its **A slaps** or **B slaps** button and likes that clip on X without casting a duel vote. Duel likes match the displayed thumbnail to a unique post in SlopHits' public song catalogue; missing or ambiguous matches show an error without opening X. Each click keeps its original track even if the pair changes while the request is pending.
+
 Sign into X in the same regular Chrome profile. Each action opens a temporary background X post tab, clicks the post's native Like button, then reloads to confirm the saved state before showing success. Already-liked posts are left liked. The helper closes when the request finishes. Errors and missing login show an error toast instead of claiming success. If the request times out after X received the click, the like may still have succeeded; retrying checks the existing state rather than toggling it off.
 
 The script also runs on X post pages and uses Tampermonkey's `GM_openInTab` and value-storage/listener grants to communicate with its helper tab. It does not copy cookies, access tokens, or account credentials. Only a short-lived post ID/request token and result are exchanged; the request is deleted afterward. X automation only runs for a valid request created by a SlopHits Like action. It depends on X's page structure and may need maintenance if that changes.
 
-Versions use `YYYY-MM-DD.NN` (Europe/Vienna date and a two-digit daily release number). Current release: `2026-11-01.06`.
+Versions use `YYYY-MM-DD.NN` (Europe/Vienna date and a two-digit daily release number). Current release: `2026-11-02.03`.
+
+Release `2026-11-02.03`: restores each Like button's position when SlopHits replaces the voting buttons after skipping a pair. All 22 Like smoke checks passed against the installed script in background regular Chrome, including real Skip transitions at desktop and mobile widths. Syntax and whitespace checks passed.
+
+Release `2026-11-02.02`: adds Like beside both duel voting buttons, matching their height and bottom shadow. All 21 Like smoke checks passed against the installed script in background regular Chrome, using intercepted X fixtures. Duel coverage includes both post targets, no voting, track changes, unknown-track errors, and equal-height placement at 1440, 390, and 320px. Syntax and whitespace checks passed. Native fullscreen was not exercised.
 
 ## Smoke tests
 
